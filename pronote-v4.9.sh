@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Installation Pronote Client 2026 - Script universel Linux v4.9
+# Installation Pronote Client 2026 - Script universel Linux v4.10
 # Support natif : Debian, Ubuntu, Mint, Fedora, Arch, CachyOS, Manjaro,
 #                 Omarchy, EndeavourOS, Garuda, openSUSE, NixOS, GLF OS,
-#                 Solus, Alpine Linux, Void Linux, Slackware (et Salix)
+#                 Solus, Alpine Linux, Void Linux, Slackware (et Salix),
+#                 Gentoo (et Funtoo)
 # Ce script n'est pas écrit ni supporté par Index Education.
 # Il n'y a pas de support technique lié à son utilisation.
 # Support automatique étendu : toute distribution dérivée (via ID_LIKE)
@@ -11,6 +12,51 @@
 # Préfixes Wine :
 #   64 bits : ~/.local/share/wineprefixes/pronote-2026
 #   32 bits : ~/.local/share/wineprefixes/pronote-2026-32
+#
+# Changelog v4.10 :
+#   - Fix Ubuntu 26.04 / Mint (installation de Wine) :
+#     • Sélection automatique de la branche WineHQ : le dépôt WineHQ ne propose
+#       plus « winehq-stable » pour certaines bases (Ubuntu 26.04 « resolute » :
+#       winehq-stable absent du dépôt, winehq-devel 11 disponible). Le script
+#       choisit désormais tout seul un paquet Wine 10/11 : winehq-stable puis
+#       winehq-devel puis winehq-staging (chaque branche proposant Wine 10
+#       ou plus), puis repli sur le Wine de la distribution. Plus besoin de
+#       corriger le script à chaque retrait de version du dépôt WineHQ.
+#     • Filet de sécurité version : après installation, la version de Wine est
+#       vérifiée. Pronote refusant de se lancer avec Wine 9 ou inférieur, le
+#       script retente automatiquement le dépôt WineHQ si un Wine trop ancien
+#       est en place (cas Mint 22.3 : Wine 9.0 installé depuis les dépôts) et
+#       explique clairement l'échec le cas échéant (contournement expert :
+#       PRONOTE_IGNORE_WINE_VERSION=1).
+#     • Verrou dpkg : un apt-get encore actif (essai précédent interrompu,
+#       session Live) bloquait toute nouvelle installation (« Could not get
+#       lock /var/lib/dpkg/lock-frontend »). Le script attend désormais la fin
+#       du processus en cours (au plus 5 minutes, affichage explicite) et apt
+#       attend lui-même via DPkg::Lock::Timeout=600. Message clair sur la
+#       longue phase de décompression après le téléchargement (surtout en
+#       session Live) pour ne plus croire l'installation « figée ».
+#   - Nouveau : ouverture des pièces jointes du cahier de textes avec les
+#     applications Linux (via le registre Wine, indépendant de l'environnement
+#     de bureau : KDE, GNOME, XFCE, Cinnamon, MATE, LXQt, COSMIC, Hyprland...).
+#     Images, PDF, vidéos... s'ouvrent dans le navigateur par défaut ; les
+#     documents bureautiques (Word, Excel, PowerPoint, OpenDocument, RTF,
+#     texte...) dans la suite bureautique installée par défaut (LibreOffice,
+#     OnlyOffice...) ; si aucune suite n'est installée, rien n'est ouvert.
+#     Les associations sont écrites dans le registre du préfixe Wine : elles
+#     disparaissent avec lui et n'atteignent pas le reste du système.
+#   - Nouveau : écrans haute résolution (QHD / 4K). Wine n'applique aucune
+#     mise à l'échelle par défaut : l'Arial 11 de Pronote y devient minuscule.
+#     Si un grand écran est détecté (QHD, 4K ou forte densité de pixels), le
+#     script propose simplement d'agrandir les caractères (choix O/N, réglage
+#     DPI équivalent à Windows). Sur un écran 1080p ou plus petit, rien n'est
+#     demandé : la taille par défaut convient.
+#   - Nouveau : support Gentoo / Funtoo (emerge), avec avertissement clair sur
+#     la durée (Wine y est compilé depuis les sources).
+#   - Revue des familles peu testées (Void, Alpine, Solus, Slackware) : pas de
+#     changement de comportement, vérification des commandes et des paquets.
+#   - Aucun changement des autres correctifs précédents (Ubuntu/Zorin/NixOS,
+#     conffiles dpkg, force-overwrite, préfixes séparés, désinstallateurs) :
+#     mêmes choix 32/64 bits, mêmes chemins, mêmes lanceurs.
 #
 # Changelog v4.9 :
 #   - Fix NixOS (bug majeur : les deux architectures s'écrasaient) : la
@@ -157,17 +203,19 @@ set -euo pipefail
 # Configuration générale
 # ------------------------------------------------------------------------------
 
-readonly SCRIPT_VERSION="4.9"
+readonly SCRIPT_VERSION="4.10"
 readonly DEFAULT_YEAR="2026"
 readonly DEFAULT_VERSION="2026.2.6"
-readonly MIN_WINE_VERSION="9.0"
+# Pronote 2026 refuse de se lancer avec Wine 9 ou une version inférieure :
+# la version minimale exigée est donc Wine 10.0.
+readonly MIN_WINE_VERSION="10.0"
 readonly PRONOTE_DOWNLOAD_PAGE="https://www.index-education.com/fr/telecharger-pronote.php"
 readonly PRONOTE_ICON_URL="https://img.icons8.com/doodle/1200/pronote-logo.jpg"
 readonly PRONOTE_ICON_URLS=(
     "https://img.icons8.com/doodle/1200/pronote-logo.jpg"
     "https://img.icons8.com/doodle/480/pronote-logo.png"
 )
-readonly HTTP_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) PronoteInstaller/4.9"
+readonly HTTP_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) PronoteInstaller/4.10"
 readonly ICON_SIZES=(16 22 24 32 48 64 128 256)
 readonly ICON_BASE_DIR="$HOME/.local/share/icons/hicolor"
 readonly ICON_DIR="$ICON_BASE_DIR/scalable/apps"
@@ -217,6 +265,9 @@ UNINSTALL_ONLY="0"
 UNINSTALL_ARCH=""
 IN_NIX_SHELL="0"
 IS_LIVE_SESSION="0"
+
+# Mise à l'échelle HiDPI appliquée (pourcentage, vide si non appliquée)
+HIDPI_APPLIED=""
 
 WIN_VERSION="win11"
 
@@ -365,6 +416,9 @@ Options:
 Variables d'environnement facultatives :
   WINEPREFIX=/chemin     Forcer le préfixe Wine utilisé
   PRONOTE_IGNORE_DISK=1  Ignorer les contrôles d'espace disque
+  PRONOTE_IGNORE_WINE_VERSION=1
+                         Installer même si Wine < 10 est détecté (déconseillé :
+                         Pronote refuse de démarrer avec Wine 9 ou inférieur)
 
 Notes :
   • Les versions 32 et 64 bits utilisent des préfixes Wine distincts et
@@ -599,6 +653,9 @@ detect_distro() {
             void)
                 DISTRO_FAMILY="void"
                 ;;
+            gentoo|funtoo)
+                DISTRO_FAMILY="gentoo"
+                ;;
             *)
                 DISTRO_FAMILY="unknown"
                 ;;
@@ -615,6 +672,7 @@ detect_distro() {
                 *" solus "*)                 DISTRO_FAMILY="solus" ;;
                 *" alpine "*)                DISTRO_FAMILY="alpine" ;;
                 *" void "*)                  DISTRO_FAMILY="void" ;;
+                *" gentoo "*)                DISTRO_FAMILY="gentoo" ;;
             esac
 
             if [ "$DISTRO_FAMILY" != "unknown" ]; then
@@ -877,6 +935,10 @@ url_exists() {
 
     if check_command curl; then
         curl -fsIL --connect-timeout 20 -A "$HTTP_USER_AGENT" "$url" >/dev/null 2>&1 && return 0
+        # Certains CDN refusent les requêtes HEAD : un GET partiel suffit
+        # alors à prouver que la ressource existe (fichiers .sources WineHQ).
+        curl -fsL --connect-timeout 20 --max-time 40 -r 0-31 \
+            -A "$HTTP_USER_AGENT" "$url" >/dev/null 2>&1 && return 0
     fi
 
     return 1
@@ -1874,6 +1936,7 @@ apt_run() {
         -o Dpkg::Options::=--force-confold \
         -o APT::Get::Assume-Yes=true \
         -o Dpkg::Use-Pty=0 \
+        -o DPkg::Lock::Timeout=600 \
         "$@"
 }
 
@@ -1906,7 +1969,11 @@ apt_install() {
         return 0
     fi
 
-    [ -s "$logfile" ] && cat "$logfile" >&2
+    # En mode visible, la sortie a déjà été affichée par « tee » :
+    # on ne la répète pas une seconde fois.
+    if [ "$visible" = "0" ] && [ -s "$logfile" ]; then
+        cat "$logfile" >&2
+    fi
 
     if grep -qi "trying to overwrite" "$logfile" 2>/dev/null; then
         log_warning "Conflit de fichiers partagés (Zorin OS) : nouvel essai en autorisant l'écrasement."
@@ -1925,12 +1992,172 @@ debian_repair_dpkg() {
         --force-confdef --force-confmiss --force-confold >/dev/null 2>&1 || true
 }
 
+# Processus apt/dpkg encore actifs (retour vide s'il n'y en a pas).
+debian_apt_holders() {
+    ps -eo pid=,comm= 2>/dev/null \
+        | awk '$2 ~ /^(apt-get|apt|dpkg|unattended-upgr|aptd|aptdcon)$/ {printf "%s (%s) ", $1, $2}'
+}
+
+# Attend (au plus SECONDES, par pas de 10 s) qu'un apt-get / dpkg déjà lancé
+# libère le verrou dpkg. Cas réel (Ubuntu 26.04, session Live) : le premier
+# essai interrompu laissait un apt-get actif, et l'essai suivant échouait sur
+# « Could not get lock /var/lib/dpkg/lock-frontend ». On attend proprement la
+# fin du processus en cours au lieu d'échouer (apt attend lui-même via
+# DPkg::Lock::Timeout=600 ; ceci couvre aussi dpkg --configure -a).
+debian_wait_for_dpkg_lock() {
+    local max_secs="${1:-300}"
+    local waited=0 holders
+
+    holders="$(debian_apt_holders)"
+    [ -n "$holders" ] || return 0
+
+    log_warning "Un autre gestionnaire de paquets est encore en cours : $holders"
+    log_info "Attente de sa fin (au plus $((max_secs / 60)) min) : ne fermez pas cette fenêtre..."
+
+    while [ "$waited" -lt "$max_secs" ]; do
+        sleep 10
+        waited=$((waited + 10))
+        holders="$(debian_apt_holders)"
+        if [ -z "$holders" ]; then
+            log_info "Le gestionnaire de paquets précédent a terminé : l'installation continue."
+            return 0
+        fi
+    done
+
+    log_warning "Le verrou dpkg est toujours occupé après $((max_secs / 60)) min ($holders)."
+    log_warning "Si l'installation reste bloquée, redémarrez la machine puis relancez ce script."
+    return 1
+}
+
+# Version candidate (apt) du paquet indiqué, vide si aucune.
+apt_candidate_version() {
+    apt-cache policy "$1" 2>/dev/null | sed -n 's/^ *Candidate: //p' | head -n1
+}
+
+# Numéro de version MAJEUR du paquet candidat (0 si absent).
+# « 11.0.0.0~noble-1 » donne 11, « 10.0~repack-12ubuntu1 » donne 10.
+apt_candidate_major() {
+    local v major
+    v="$(apt_candidate_version "$1")"
+
+    case "$v" in
+        ""|"(none)")
+            echo "0"
+            return 0
+            ;;
+    esac
+
+    v="${v#*:}"            # époque de version éventuelle (« 2:1.0 » devient « 1.0 »)
+    major="${v%%[.~+-]*}"
+
+    case "$major" in
+        ''|*[!0-9]*) echo "0" ;;
+        *)           echo "$major" ;;
+    esac
+}
+
 # ==============================================================================
 # Installation de Wine : famille Debian / Ubuntu / Mint  (WineHQ)
 # ==============================================================================
-# Comportement v4.6 conservé : WineHQ configuré AVANT winetricks, clé .asc
-# (APT 3.2) + copie .key, repli sur Wine des dépôts si WineHQ est indisponible.
+# Comportement v4.10 :
+#   1. dépôt WineHQ configuré AVANT winetricks (clé .asc + .key, conservé) ;
+#   2. choix AUTOMATIQUE de la branche WineHQ proposant Wine 10/11 :
+#      winehq-stable puis winehq-devel puis winehq-staging (voir plus bas) ;
+#   3. repli sur le Wine des dépôts de la distribution ;
+#   4. vérification finale de la version (Pronote refuse Wine 9 ou moins).
 # ------------------------------------------------------------------------------
+
+# Choisit et installe automatiquement un paquet WineHQ dont la version est
+# 10 ou 11, quelle que soit la branche qui le propose : « winehq-stable »
+# d'abord, puis « winehq-devel », puis « winehq-staging ». Résout le cas
+# Ubuntu 26.04 (« resolute ») où WineHQ n'offre PAS winehq-stable mais
+# propose winehq-devel en version 11 : auparavant le script retombait alors
+# sur le Wine de la distribution. Une branche ne proposant que du Wine 9 ou
+# moins est ignorée (Pronote refuse de démarrer avec Wine 9 ou inférieur).
+install_wine_from_winehq() {
+    local pkg v
+
+    for pkg in winehq-stable winehq-devel winehq-staging; do
+        v="$(apt_candidate_major "$pkg")"
+
+        if [ "$v" -lt 10 ]; then
+            if [ "$v" -gt 0 ]; then
+                log_info "$pkg : version proposée $v (< 10) : branche ignorée."
+            fi
+            continue
+        fi
+
+        log_info "Installation de $pkg (Wine $v) depuis WineHQ..."
+        log_info "Téléchargement important (plusieurs centaines de Mo), puis décompression"
+        log_info "pouvant rester silencieuse plusieurs minutes (surtout en Live) : patientez."
+
+        if apt_install -v --install-recommends "$pkg"; then
+            log_success "$pkg installé (Wine $v)."
+            return 0
+        fi
+
+        log_warning "Échec de l'installation de $pkg : essai de la branche WineHQ suivante..."
+    done
+
+    log_warning "Aucun paquet WineHQ 10/11 n'a pu être installé."
+    return 1
+}
+
+# Filet de sécurité : Pronote exige Wine 10 minimum. Si le Wine installé est
+# trop ancien (ex. Wine 9.0 des dépôts Mint 22.3 alors que le dépôt WineHQ
+# n'a pas abouti plus haut), on tente une dernière fois le dépôt WineHQ
+# (stable puis devel puis staging). Sinon, on arrête avec une explication
+# claire : installer Pronote avec Wine 9 donnerait un logiciel incapable de
+# démarrer. Contournement expert : PRONOTE_IGNORE_WINE_VERSION=1.
+ensure_wine_minimum_version_debian() {
+    discover_wine_paths
+
+    local v
+    v="$(get_wine_version)"
+
+    if [ "$v" = "0" ]; then
+        log_error "Wine est introuvable après l'installation des paquets."
+        print_wine_diagnostics
+        exit 1
+    fi
+
+    if ! version_lt "$v" "$MIN_WINE_VERSION"; then
+        log_success "Wine installé : version $v (>= $MIN_WINE_VERSION, compatible Pronote)."
+        return 0
+    fi
+
+    log_warning "Wine $v est installé, mais Pronote ${PRONOTE_YEAR} exige Wine $MIN_WINE_VERSION au minimum."
+    log_info "Nouvelle tentative d'obtention d'un Wine récent via le dépôt WineHQ..."
+
+    debian_wait_for_dpkg_lock 300 || true
+    if setup_winehq_repo && install_wine_from_winehq; then
+        discover_wine_paths
+        v="$(get_wine_version)"
+        if ! version_lt "$v" "$MIN_WINE_VERSION"; then
+            log_success "Wine $v installé via WineHQ : version compatible Pronote."
+            return 0
+        fi
+    fi
+
+    if [ "${PRONOTE_IGNORE_WINE_VERSION:-0}" = "1" ]; then
+        log_warning "Wine $v conservé malgré tout (PRONOTE_IGNORE_WINE_VERSION=1)."
+        return 0
+    fi
+
+    log_error "Impossible d'obtenir Wine $MIN_WINE_VERSION ou plus récent sur ce système."
+    echo ""
+    echo "Pronote ${PRONOTE_YEAR} refuse de démarrer avec Wine 9 ou une version inférieure :"
+    echo "l'installation est arrêtée ici pour éviter d'installer un logiciel inutilisable."
+    echo ""
+    echo "Suggestions :"
+    echo "  • Vérifiez la connexion Internet, puis relancez ce script."
+    echo "  • Si un gestionnaire de paquets semble resté bloqué, redémarrez la machine"
+    echo "    puis relancez ce script."
+    echo "  • Pour installer quand même, en connaissance de cause (déconseillé) :"
+    echo "    PRONOTE_IGNORE_WINE_VERSION=1 bash $0"
+    print_disk_hint_if_low
+    exit 1
+}
 
 # Affiche « base codename » (ex. « ubuntu noble », « debian trixie ») ou rien.
 debian_winehq_target() {
@@ -2060,12 +2287,25 @@ setup_winehq_repo() {
 
     apt_run update || log_warning "apt-get update a signalé des erreurs (autres dépôts ?) : vérification de WineHQ..."
 
-    if apt-cache policy winehq-stable 2>/dev/null | grep -qE 'Candidate: [0-9]'; then
-        log_success "Dépôt WineHQ configuré pour ${base} ${codename}."
+    # Le dépôt est jugé utilisable dès qu'il propose UNE branche WineHQ, même
+    # si « winehq-stable » en est absent (Ubuntu 26.04 « resolute » :
+    # winehq-stable absent, winehq-devel/winehq-staging présents en 11.x).
+    # Le choix du paquet (version 10/11 exigée) se fait ensuite dans
+    # install_wine_from_winehq.
+    local pkg
+    local -a branches=()
+    for pkg in winehq-stable winehq-devel winehq-staging; do
+        if [ "$(apt_candidate_major "$pkg")" -gt 0 ]; then
+            branches+=("$pkg")
+        fi
+    done
+
+    if [ "${#branches[@]}" -gt 0 ]; then
+        log_success "Dépôt WineHQ configuré pour ${base} ${codename} (branches proposées : ${branches[*]})."
         return 0
     fi
 
-    log_warning "winehq-stable n'est pas proposé par le dépôt : dépôt WineHQ retiré."
+    log_warning "Aucun paquet WineHQ (stable/devel/staging) n'est proposé par le dépôt : dépôt WineHQ retiré."
     sudo rm -f "/etc/apt/sources.list.d/winehq-${codename}.sources" 2>/dev/null || true
     apt_run update >/dev/null 2>&1 || true
     return 1
@@ -2099,23 +2339,29 @@ install_wine_debian() {
         sudo dpkg --add-architecture i386 || log_warning "Impossible d'activer l'architecture i386."
     fi
 
+    # Un apt-get précédent peut encore tourner (essai interrompu, session
+    # Live Ubuntu 26.04...) : on attend le verrou dpkg au lieu d'échouer
+    # immédiatement dessus.
+    debian_wait_for_dpkg_lock 300 || true
+
     debian_repair_dpkg
 
     local winehq_ok=0
 
     if setup_winehq_repo; then
-        log_info "Installation de winehq-stable (WineHQ)..."
-        if apt_install -v --install-recommends winehq-stable; then
+        if install_wine_from_winehq; then
             winehq_ok=1
-            log_success "WineHQ stable installé."
         else
-            log_warning "Échec de l'installation de winehq-stable : repli sur Wine des dépôts standards."
+            log_warning "WineHQ n'a pas fourni de Wine installable : repli sur Wine des dépôts standards."
         fi
     fi
 
     if [ "$winehq_ok" -eq 0 ]; then
         apt_run update >/dev/null 2>&1 || true
+        debian_wait_for_dpkg_lock 300 || true
         log_info "Installation de Wine depuis les dépôts de la distribution..."
+        log_info "(Après le téléchargement, la décompression de Wine peut rester silencieuse"
+        log_info " plusieurs minutes, surtout en session Live : c'est normal, patientez.)"
         if ! apt_install -v --install-recommends wine; then
             apt_install -v wine64 || true
         fi
@@ -2127,6 +2373,9 @@ install_wine_debian() {
             fi
         fi
     fi
+
+    # Pronote exige Wine 10 minimum : vérification + dernier recours WineHQ.
+    ensure_wine_minimum_version_debian
 
     log_info "Installation des outils complémentaires (cabextract, icoutils, ImageMagick...)..."
     install_debian_optional_packages cabextract icoutils imagemagick desktop-file-utils wget xdg-utils librsvg2-bin file
@@ -2704,6 +2953,60 @@ install_wine_slackware() {
 }
 
 # ==============================================================================
+# Installation de Wine : Gentoo / Funtoo  (emerge / Portage)
+# ==============================================================================
+# Gentoo compile les paquets depuis les sources : l'installation de Wine peut
+# durer de 30 minutes à plusieurs heures selon la machine. Le paquet
+# « app-emulation/wine » suit la version stable de l'arbre Portage (Wine 10/11
+# selon le moment) et couvre le 32 et le 64 bits (WoW64) par défaut.
+# ------------------------------------------------------------------------------
+
+install_wine_gentoo() {
+    require_privilege_helper
+    log_info "Famille Gentoo détectée : installation de Wine (emerge)..."
+
+    if ! check_command emerge; then
+        if wine_is_available; then
+            log_success "Wine déjà présent : $WINE_BIN — on continue."
+            return 0
+        fi
+        log_error "emerge (Portage) est introuvable : impossible d'installer Wine automatiquement."
+        exit 1
+    fi
+
+    if wine_is_available; then
+        log_success "Wine déjà installé : $WINE_BIN (version $(get_wine_version))"
+    else
+        log_warning "Gentoo compile Wine depuis les sources : l'installation peut prendre"
+        log_warning "de 30 minutes à plusieurs heures selon la machine. Laissez-la se terminer."
+        log_info "Synchronisation de l'arbre Portage (peut prendre quelques minutes)..."
+        sudo emerge --sync >/dev/null 2>&1 \
+            || log_warning "Synchronisation impossible (on continue avec l'arbre Portage actuel)."
+
+        log_info "Compilation et installation de app-emulation/wine..."
+        if ! sudo emerge --noreplace app-emulation/wine; then
+            log_error "Installation de Wine impossible avec emerge."
+            echo "Vérifiez les USE flags de app-emulation/wine (X, opengl sont conseillés)"
+            echo "et l'espace disque disponible, puis relancez ce script."
+            print_disk_hint_if_low
+            exit 1
+        fi
+        log_success "Paquet wine installé."
+    fi
+
+    log_info "Installation des outils complémentaires (compilation, un par un)..."
+    local p
+    for p in app-emulation/winetricks app-arch/cabextract media-gfx/icoutils \
+             media-gfx/imagemagick x11-misc/xdg-utils dev-util/desktop-file-utils \
+             gnome-base/librsvg net-misc/wget; do
+        sudo emerge --noreplace --quiet "$p" >/dev/null 2>&1 \
+            || log_info "Paquet optionnel non installé (absent ou masqué) : $p"
+    done
+
+    return 0
+}
+
+# ==============================================================================
 # Distribution inconnue
 # ==============================================================================
 
@@ -2735,8 +3038,10 @@ verify_wine_installation() {
     log_success "Wine détecté : $WINE_BIN (version $v)"
 
     if version_lt "$v" "$MIN_WINE_VERSION"; then
-        log_warning "Wine $v est plus ancien que la version minimale recommandée ($MIN_WINE_VERSION)."
-        log_warning "Pronote peut fonctionner, mais une mise à jour de Wine est conseillée."
+        log_warning "Wine $v est plus ancien que la version minimale exigée par Pronote ($MIN_WINE_VERSION)."
+        log_warning "Pronote ${PRONOTE_YEAR} refuse de se lancer avec Wine 9 ou une version inférieure :"
+        log_warning "le logiciel risque de ne pas démarrer. Une mise à jour de Wine est fortement"
+        log_warning "conseillée (dépôt WineHQ, ou distribution mise à jour) avant d'utiliser Pronote."
     fi
 
     return 0
@@ -2793,6 +3098,7 @@ ensure_dependencies() {
         alpine)     install_wine_alpine ;;
         void)       install_wine_void ;;
         slackware)  install_wine_slackware ;;
+        gentoo)     install_wine_gentoo ;;
         *)          install_wine_unknown ;;
     esac
 
@@ -2905,6 +3211,35 @@ force_windows_version_registry() {
     # bloquer : si des processus restent, l'étape suivante les réutilisera.
     settle_wine_session 15
     return 0
+}
+
+# Importe un fichier .reg dans le registre du préfixe courant (regedit
+# silencieux et borné dans le temps). Renvoie 0 si l'import a réussi.
+# Même mécanisme que force_windows_version_registry, réutilisé par les
+# associations de pièces jointes et la mise à l'échelle des écrans QHD/4K.
+import_reg_file() {
+    local reg_file="$1"
+    local reg_win_path="$2"
+    local st=0
+
+    set +e
+    if [ "$SHOW_WINE_LOGS" = "1" ]; then
+        run_with_timeout 180 "$WINE_BIN" regedit /S "$reg_win_path"
+        st=$?
+    else
+        (
+            export WINEDEBUG="-all"
+            run_with_timeout 180 "$WINE_BIN" regedit /S "$reg_win_path"
+        ) >>"$LOG_FILE" 2>&1
+        st=$?
+    fi
+    set -e
+
+    if status_is_timeout "$st"; then
+        run_wineserver_tool -k >/dev/null 2>&1 || true
+    fi
+
+    [ "$st" -eq 0 ]
 }
 
 winetricks_verb() {
@@ -3090,7 +3425,565 @@ configure_wine() {
     # winetricks peut modifier la version Windows : on la force à nouveau.
     force_windows_version_registry
 
+    # --- Pièces jointes : ouverture via les applications Linux ---------------
+    install_attachment_opener
+    register_attachment_associations
+
+    # --- Écran haute résolution (QHD/4K) : taille des caractères -------------
+    configure_hidpi_scaling
+
     log_success "Préfixe Wine prêt : $WINEPREFIX"
+    return 0
+}
+
+# ==============================================================================
+# Ouverture des pièces jointes avec les applications Linux
+# ==============================================================================
+# Pronote télécharge une pièce jointe du cahier de textes (PDF, Word, Excel,
+# images, vidéos...) puis demande à Windows de l'ouvrir. Sans configuration,
+# Wine ne sait pas quoi en faire : le fichier restait dans un dossier
+# temporaire (vu sous CachyOS : téléchargé sous /run mais jamais ouvert).
+#
+# Principe (indépendant de l'environnement de bureau) :
+#   1. un petit script « pronote-ouvrir-piece-jointe.sh » est déposé À LA
+#      RACINE du préfixe Wine (il y trouve les lecteurs dosdevices) ;
+#   2. le registre du préfixe (HKCR) associe chaque extension utile à ce
+#      script : HKCR\.extension -> ProgID -> shell\open\command ;
+#   3. appelé par Wine (comme un programme Windows via CreateProcess, le
+#      noyau Linux exécutant son shebang), le script convertit le chemin
+#      Windows en chemin Linux puis :
+#        - images, PDF, vidéos...   -> navigateur par défaut de la
+#          distribution (xdg-settings, repli sur les navigateurs connus) ;
+#        - documents bureautiques   -> suite bureautique par défaut
+#          (Word, Excel, PowerPoint, OpenDocument, RTF, texte...) ;
+#          si aucune suite n'est installée, rien n'est ouvert ;
+#        - autres formats           -> xdg-open.
+# Les associations vivent dans le registre du préfixe : elles disparaissent
+# avec lui et ne touchent pas au reste du système. Un journal des ouvertures
+# est conservé dans ~/.local/share/pronote-pieces-jointes/ouverture.log.
+# ==============================================================================
+
+# Écrit le script d'ouverture dans le préfixe courant et garantit la présence
+# du lecteur Z: (racine Linux), utilisé par le registre pour désigner le
+# script (Z:\home\...\pronote-ouvrir-piece-jointe.sh).
+install_attachment_opener() {
+    local opener="$WINEPREFIX/pronote-ouvrir-piece-jointe.sh"
+
+    cat > "$opener" << 'OUVRIR_EOF'
+#!/usr/bin/env bash
+# =============================================================================
+# Ouvreur de pièces jointes Pronote - généré automatiquement par
+# l'installateur Pronote Linux (ne pas modifier à la main).
+#
+# Pronote (sous Wine) télécharge une pièce jointe puis demande au système
+# Windows de l'ouvrir. Le registre Wine (HKCR) redirige cette demande vers CE
+# script, qui ouvre le fichier avec les applications Linux :
+#   - images, PDF, vidéos...          -> navigateur par défaut de la
+#                                        distribution ;
+#   - documents bureautiques          -> suite bureautique par défaut
+#     (Word, Excel, PowerPoint,          (LibreOffice, OnlyOffice...) ;
+#      OpenDocument, RTF, texte...)      si aucune suite n'est installée,
+#                                        rien n'est ouvert ;
+#   - autres formats                  -> xdg-open (application par défaut).
+#
+# Le script fonctionne quel que soit l'environnement de bureau (KDE, GNOME,
+# XFCE, Cinnamon, MATE, LXQt, COSMIC, Hyprland...) grâce aux outils XDG.
+# Il est placé À LA RACINE du préfixe Wine : son emplacement indique où se
+# trouvent les lecteurs (dosdevices) pour convertir les chemins Windows.
+# =============================================================================
+
+# Wine transmet un PATH « à la Windows » (C:\windows\...) : on rétablit un
+# PATH Linux standard pour retrouver firefox, xdg-settings, libreoffice...
+PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:$HOME/.local/bin:$HOME/.local/sbin:$HOME/.cargo/bin:$PATH"
+export PATH
+
+PREFIXE_WINE="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+JOURNAL_DIR="$HOME/.local/share/pronote-pieces-jointes"
+JOURNAL="$JOURNAL_DIR/ouverture.log"
+
+journal() {
+    mkdir -p "$JOURNAL_DIR" 2>/dev/null || return 0
+    # Journal borné : au-delà de 64 Ko, l'ancien est conservé en .1
+    if [ -f "$JOURNAL" ] && [ "$(wc -c < "$JOURNAL" 2>/dev/null || echo 0)" -gt 65536 ]; then
+        mv -f "$JOURNAL" "$JOURNAL.1" 2>/dev/null || true
+    fi
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$JOURNAL" 2>/dev/null || true
+}
+
+# Lancement détaché : l'application ne doit pas rester rattachée à Wine,
+# sinon Pronote pourrait attendre sa fermeture avant de rendre la main.
+lancer_detache() {
+    if command -v setsid >/dev/null 2>&1; then
+        ( setsid "$@" >/dev/null 2>&1 </dev/null & ) >/dev/null 2>&1
+    else
+        ( nohup "$@" >/dev/null 2>&1 </dev/null & ) >/dev/null 2>&1
+    fi
+    return 0
+}
+
+# Conversion d'un chemin Windows (C:\users\...\fichier.pdf) en chemin Linux,
+# sans relancer Wine : les lecteurs du préfixe servent de correspondance
+# (dosdevices/c: -> drive_c, z: -> racine Linux, autres lecteurs idem).
+chemin_windows_vers_linux() {
+    local wpath="$1" lecteur reste periph
+
+    wpath="${wpath#\"}"          # guillemets éventuels retirés
+    wpath="${wpath%\"}"
+
+    case "$wpath" in
+        [A-Za-z]:[/\\]*)
+            lecteur="${wpath:0:1}"
+            lecteur="${lecteur,,}"                 # C -> c
+            reste="${wpath:2}"
+            reste="${reste//\\//}"                 # antislashs -> slashs
+            reste="${reste#/}"
+            periph="$PREFIXE_WINE/dosdevices/$lecteur:"
+            if [ -e "$periph/$reste" ]; then
+                readlink -f "$periph/$reste" 2>/dev/null || echo "$periph/$reste"
+                return 0
+            fi
+            if [ "$lecteur" = "z" ]; then
+                echo "/$reste"
+                return 0
+            fi
+            echo "$periph/$reste"                  # chemin introuvable : tel quel
+            return 0
+            ;;
+        *)
+            echo "$wpath"                          # déjà un chemin Linux ?
+            ;;
+    esac
+}
+
+# Retrouve la commande Exec= d'un fichier .desktop à partir de son identifiant
+# (ex. « firefox.desktop », « org.mozilla.firefox.desktop », « libreoffice-writer.desktop »).
+commande_desktop() {
+    local id="$1" f="" d ligne
+    [ -n "$id" ] || return 1
+
+    for d in \
+        "${XDG_DATA_HOME:-$HOME/.local/share}/applications" \
+        /usr/local/share/applications \
+        /usr/share/applications \
+        /var/lib/flatpak/exports/share/applications \
+        "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/exports/share/applications"; do
+        if [ -f "$d/$id" ]; then
+            f="$d/$id"
+            break
+        fi
+    done
+
+    [ -n "$f" ] || return 1
+    ligne="$(grep -m1 '^Exec=' "$f" 2>/dev/null | cut -d= -f2-)"
+    [ -n "$ligne" ] || return 1
+
+    # %f %F %u %U %i %c %k retirés, espaces multiples compactés
+    ligne="$(printf '%s' "$ligne" | sed -e 's/%[fFuUick]//g' -e 's/  */ /g' -e 's/^ //' -e 's/ $//')"
+    [ -n "$ligne" ] || return 1
+    echo "$ligne"
+}
+
+# Navigateur par défaut : celui du bureau (xdg-settings), sinon une commande
+# connue présente sur la machine.
+navigateur_par_defaut() {
+    local id ligne b
+
+    if command -v xdg-settings >/dev/null 2>&1; then
+        id="$(xdg-settings get default-web-browser 2>/dev/null || true)"
+        ligne="$(commande_desktop "$id")"
+        if [ -n "$ligne" ]; then
+            echo "$ligne"
+            return 0
+        fi
+    fi
+
+    for b in firefox chromium chromium-browser google-chrome google-chrome-stable \
+             brave-browser microsoft-edge-stable microsoft-edge vivaldi-stable \
+             vivaldi opera epiphany falkon konqueror qutebrowser waterfox palemoon; do
+        command -v "$b" >/dev/null 2>&1 && { echo "$b"; return 0; }
+    done
+    return 1
+}
+
+# Suite bureautique par défaut : celle associée aux documents OpenDocument
+# (xdg-mime), sinon une suite installée (par ordre de préférence).
+suite_bureautique_par_defaut() {
+    local id ligne s
+
+    if command -v xdg-mime >/dev/null 2>&1; then
+        id="$(xdg-mime query default application/vnd.oasis.opendocument.text 2>/dev/null || true)"
+        ligne="$(commande_desktop "$id")"
+        if [ -n "$ligne" ]; then
+            echo "$ligne"
+            return 0
+        fi
+    fi
+
+    for s in soffice libreoffice onlyoffice-desktopeditors onlyoffice \
+             wpsoffice wps calligrawords; do
+        command -v "$s" >/dev/null 2>&1 && { echo "$s"; return 0; }
+    done
+    return 1
+}
+
+ouvrir_dans_le_navigateur() {
+    local fichier="$1" nav
+
+    if nav="$(navigateur_par_defaut)"; then
+        # La commande peut contenir des arguments (« flatpak run org.x.y »)
+        # shellcheck disable=SC2086
+        lancer_detache $nav "$fichier"
+        journal "Ouvert dans le navigateur ($nav) : $fichier"
+    elif command -v xdg-open >/dev/null 2>&1; then
+        lancer_detache xdg-open "$fichier"
+        journal "Navigateur introuvable, ouvert avec xdg-open : $fichier"
+    else
+        journal "Aucun navigateur disponible pour : $fichier"
+    fi
+}
+
+ouvrir_dans_la_suite_bureautique() {
+    local fichier="$1" suite
+
+    if suite="$(suite_bureautique_par_defaut)"; then
+        # shellcheck disable=SC2086
+        lancer_detache $suite "$fichier"
+        journal "Ouvert dans la suite bureautique ($suite) : $fichier"
+    else
+        # Aucune suite bureautique installée : on n'ouvre rien (choix voulu)
+        journal "Aucune suite bureautique installée : rien n'est ouvert : $fichier"
+    fi
+}
+
+# ------------------------------- programme -----------------------------------
+
+if [ "$#" -lt 1 ]; then
+    journal "Appelé sans fichier à ouvrir."
+    exit 0
+fi
+
+FICHIER="$(chemin_windows_vers_linux "$1")"
+
+if [ ! -f "$FICHIER" ]; then
+    journal "Fichier introuvable (reçu : [$1] -> [$FICHIER])."
+    exit 0
+fi
+
+EXTENSION="${FICHIER##*.}"
+EXTENSION="${EXTENSION,,}"
+
+case "$EXTENSION" in
+    png|jpg|jpeg|jfif|gif|webp|bmp|svg|pdf|mp4|m4v|webm|avi|mpg|mpeg|mov|mkv)
+        ouvrir_dans_le_navigateur "$FICHIER"
+        ;;
+    doc|docx|docm|dot|dotx|xls|xlsx|xlsm|xltx|csv|ppt|pptx|pps|ppsx|rtf|txt|odt|ods|odp|odg|odb|odf|odc|odi|odm)
+        ouvrir_dans_la_suite_bureautique "$FICHIER"
+        ;;
+    *)
+        # Format non répertorié : l'application par défaut du système décide
+        if command -v xdg-open >/dev/null 2>&1; then
+            lancer_detache xdg-open "$FICHIER"
+            journal "Ouvert avec xdg-open (format non répertorié .${EXTENSION}) : $FICHIER"
+        else
+            journal "Format non répertorié (.${EXTENSION}) et xdg-open absent : $FICHIER"
+        fi
+        ;;
+esac
+
+exit 0
+OUVRIR_EOF
+
+    if [ ! -s "$opener" ] || ! head -n1 "$opener" | grep -qE '^#!'; then
+        log_warning "Impossible d'écrire l'ouvreur de pièces jointes : ouverture non configurée."
+        return 0
+    fi
+    chmod 755 "$opener"
+
+    # Répertoire du journal partagé (les deux architectures y écrivent)
+    mkdir -p "$HOME/.local/share/pronote-pieces-jointes" 2>/dev/null || true
+
+    # Lecteur Z: = racine Linux : sans lui, Windows ne verrait pas le script
+    if [ -d "$WINEPREFIX/dosdevices" ] && [ ! -e "$WINEPREFIX/dosdevices/z:" ]; then
+        ln -s / "$WINEPREFIX/dosdevices/z:" 2>/dev/null || true
+    fi
+
+    log_success "Ouvreur de pièces jointes installé : $opener"
+    return 0
+}
+
+# Chemin Windows (lecteur Z:) de l'ouvreur, échappé pour un fichier .reg.
+attachment_opener_reg_path() {
+    local unix_path="$WINEPREFIX/pronote-ouvrir-piece-jointe.sh"
+    local win_path="Z:/${unix_path#/}"    # /home/u/... devient Z:/home/u/...
+    win_path="${win_path//\//\\}"          # slashs -> antislashs
+    printf '%s' "${win_path//\\/\\\\}"  # échappement .reg : un \ devient \\
+}
+
+# Extensions ouvertes dans le navigateur par défaut (images, PDF, vidéos...)
+ATTACHMENT_BROWSER_EXTS="png jpg jpeg jfif gif webp bmp svg pdf mp4 m4v webm avi mpg mpeg mov mkv"
+
+# Extensions ouvertes dans la suite bureautique par défaut (si installée)
+ATTACHMENT_OFFICE_EXTS="doc docx docm dot dotx xls xlsx xlsm xltx csv ppt pptx pps ppsx rtf txt odt ods odp odg odb odf odc odi odm"
+
+# Enregistre dans le registre du préfixe (HKCR) l'association de toutes les
+# extensions utiles vers l'ouvreur. Pronote utilise ShellExecute pour ouvrir
+# une pièce jointe : Wine suit alors ces clés comme le ferait Windows.
+register_attachment_associations() {
+    local opener_reg
+    opener_reg="$(attachment_opener_reg_path)"
+
+    local reg_dir="$WINEPREFIX/drive_c/windows/temp"
+    mkdir -p "$reg_dir" 2>/dev/null || true
+    local reg_file="$reg_dir/pronote-associations.reg"
+    local reg_win_path='C:\windows\temp\pronote-associations.reg'
+
+    local ext
+    if ! {
+        printf 'Windows Registry Editor Version 5.00\r\n\r\n' > "$reg_file"
+        printf '[HKEY_CLASSES_ROOT\\Pronote.PieceJointe]\r\n' >> "$reg_file"
+        printf '@="Piece jointe Pronote"\r\n\r\n' >> "$reg_file"
+        printf '[HKEY_CLASSES_ROOT\\Pronote.PieceJointe\\shell\\open\\command]\r\n' >> "$reg_file"
+        printf '@="\\"%s\\" \\"%%1\\""\r\n\r\n' "$opener_reg" >> "$reg_file"
+        for ext in $ATTACHMENT_BROWSER_EXTS $ATTACHMENT_OFFICE_EXTS; do
+            printf '[HKEY_CLASSES_ROOT\\.%s]\r\n' "$ext" >> "$reg_file"
+            printf '@="Pronote.PieceJointe"\r\n\r\n' >> "$reg_file"
+        done
+    } >>"$LOG_FILE" 2>&1; then
+        log_warning "Impossible d'écrire le fichier d'associations : ouverture des pièces jointes non configurée."
+        return 0
+    fi
+
+    if import_reg_file "$reg_file" "$reg_win_path"; then
+        log_success "Ouverture des pièces jointes configurée :"
+        log_success "  - images, PDF, vidéos... : navigateur par défaut de la distribution ;"
+        log_success "  - documents bureautiques (Word, Excel, PowerPoint, OpenDocument,"
+        log_success "    RTF, texte...) : suite bureautique par défaut (si aucune suite"
+        log_success "    n'est installée, rien n'est ouvert)."
+    else
+        log_warning "L'enregistrement des associations de pièces jointes a échoué (non bloquant)."
+    fi
+
+    rm -f "$reg_file" 2>/dev/null || true
+
+    # Laisse le wineserver écrire le registre (quelques secondes, borné)
+    settle_wine_session 10
+    return 0
+}
+
+# ==============================================================================
+# Écrans haute résolution (QHD / 4K) : taille des caractères de Pronote
+# ==============================================================================
+# Wine n'applique aucune mise à l'échelle par défaut : sur un écran QHD
+# (2560x1440) ou 4K (3840x2160), les caractères de Pronote (Arial 11 par
+# défaut sous Windows) deviennent minuscules. L'équivalent Wine du réglage
+# Windows est la valeur « LogPixels » du registre (96 = 100 %, 120 = 125 %,
+# 144 = 150 %, 168 = 175 %, 192 = 200 %) : c'est ce que règle le curseur
+# « Résolution de l'écran » de winecfg.
+# La question n'est posée QUE si un écran haute résolution est détecté ;
+# sur un écran 1080p ou plus petit, rien ne s'affiche (demande des
+# utilisateurs : ne pas questionner pour rien).
+# ==============================================================================
+
+# Renvoie « LARGEUR HAUTEUR DPI » de l'écran le plus grand, ou rien si la
+# résolution est inconnue. Ordre de détection : xrandr (X11 et XWayland :
+# c'est la résolution que Wine voit), puis xdpyinfo, puis /sys/class/drm
+# (résolution native du noyau, sans session graphique requise).
+detect_screen_resolution() {
+    local line mode w h mm mmw mmh dpi area
+    local best_w=0 best_h=0 best_dpi=0 best_area=0
+
+    # 1) xrandr : « SORTIE connected 3840x2160+0+0 ... 600mm x 340mm »
+    if check_command xrandr; then
+        while IFS= read -r line; do
+            mode="$(grep -oE '[0-9]{3,5}x[0-9]{3,5}\+[0-9]+\+[0-9]+' <<< "$line" | head -n1)"
+            [ -n "$mode" ] || continue
+
+            w="${mode%%x*}"
+            h="${mode#*x}"; h="${h%%+*}"
+            case "$w$h" in ''|*[!0-9]*) continue ;; esac
+
+            dpi=0
+            mm="$(grep -oE '[0-9]{2,4}mm x [0-9]{2,4}mm' <<< "$line" | head -n1)"
+            if [ -n "$mm" ]; then
+                mmw="${mm%%mm*}"
+                mmh="${mm##* x }"; mmh="${mmh%%mm*}"
+                case "$mmw" in ''|*[!0-9]*) mmw=0 ;; esac
+                case "$mmh" in ''|*[!0-9]*) mmh=0 ;; esac
+                if [ "$mmw" -gt 10 ] && [ "$mmh" -gt 10 ]; then
+                    dpi="$(awk -v w="$w" -v mmw="$mmw" 'BEGIN{printf "%.0f", w/(mmw/25.4)}')"
+                fi
+            fi
+
+            area=$((w * h))
+            if [ "$area" -gt "$best_area" ]; then
+                best_area="$area"; best_w="$w"; best_h="$h"; best_dpi="$dpi"
+            fi
+        done < <(xrandr --current 2>/dev/null | grep ' connected')
+    fi
+
+    # 2) xdpyinfo : « dimensions: 3840x2160 pixels (600mm x 340mm) »
+    if [ "$best_w" -eq 0 ] && check_command xdpyinfo; then
+        line="$(xdpyinfo 2>/dev/null | grep -m1 'dimensions:')"
+        mode="$(grep -oE '[0-9]{3,5}x[0-9]{3,5}' <<< "$line" | head -n1)"
+        if [ -n "$mode" ]; then
+            best_w="${mode%%x*}"
+            best_h="${mode#*x}"
+            case "$best_w$best_h" in ''|*[!0-9]*) best_w=0; best_h=0 ;; esac
+        fi
+        if [ "$best_w" -gt 0 ]; then
+            mm="$(grep -oE '\([0-9]{2,4}mm x [0-9]{2,4}mm\)' <<< "$line" | head -n1)"
+            if [ -n "$mm" ]; then
+                mmw="${mm%%mm*}"; mmw="${mmw#(}"
+                case "$mmw" in ''|*[!0-9]*) mmw=0 ;; esac
+                if [ "$mmw" -gt 10 ]; then
+                    best_dpi="$(awk -v w="$best_w" -v mmw="$mmw" 'BEGIN{printf "%.0f", w/(mmw/25.4)}')"
+                fi
+            fi
+        fi
+    fi
+
+    # 3) Noyau : /sys/class/drm/cardX-CONNECTEUR/modes (première ligne = mode
+    #    préféré). Résolution native, même sans session graphique.
+    if [ "$best_w" -eq 0 ]; then
+        local f
+        for f in /sys/class/drm/card*-*/modes; do
+            [ -r "$f" ] || continue
+            IFS= read -r mode < "$f" || continue
+            case "$mode" in
+                [0-9]*x[0-9]*) ;;
+                *) continue ;;
+            esac
+            w="${mode%%x*}"
+            h="${mode#*x}"
+            case "$w$h" in ''|*[!0-9]*) continue ;; esac
+            area=$((w * h))
+            if [ "$area" -gt "$best_area" ]; then
+                best_area="$area"; best_w="$w"; best_h="$h"; best_dpi=0
+            fi
+        done
+    fi
+
+    [ "$best_w" -gt 0 ] || return 1
+    echo "$best_w $best_h $best_dpi"
+    return 0
+}
+
+# Facteur d'agrandissement conseillé (1.25, 1.5, 1.75 ou 2), ou 1.0 si
+# inutile. Base : dimensions relatives à un écran 1080p ; affinée par la
+# densité de pixels quand elle est connue (portables haute résolution).
+# Borné à 200 %.
+hidpi_recommended_factor() {
+    local w="$1" h="$2" dpi="${3:-0}"
+
+    awk -v w="$w" -v h="$h" -v dpi="$dpi" 'BEGIN {
+        r = (w / 1920 > h / 1080) ? w / 1920 : h / 1080
+        if (dpi >= 150 && dpi / 96 > r) r = dpi / 96
+        if (r < 1.25) { print "1.0"; exit }
+        if (r > 2) r = 2
+        printf "%.2f", int(r * 4 + 0.5) / 4
+    }'
+}
+
+# Écrit le DPI dans le registre Wine (équivalent du curseur « Résolution de
+# l'écran » de winecfg) et mémorise le choix dans le préfixe pour ne plus
+# poser la question aux exécutions suivantes.
+apply_hidpi_scaling() {
+    local dpi="$1" pourcent="$2"
+    local marker="$WINEPREFIX/.pronote-echelle"
+
+    local reg_dir="$WINEPREFIX/drive_c/windows/temp"
+    mkdir -p "$reg_dir" 2>/dev/null || true
+    local reg_file="$reg_dir/pronote-hidpi.reg"
+    local reg_win_path='C:\windows\temp\pronote-hidpi.reg'
+
+    if ! {
+        printf 'Windows Registry Editor Version 5.00\r\n\r\n' > "$reg_file"
+        printf '[HKEY_CURRENT_USER\\Control Panel\\Desktop]\r\n' >> "$reg_file"
+        printf '"LogPixels"=dword:%08x\r\n\r\n' "$dpi" >> "$reg_file"
+    } >>"$LOG_FILE" 2>&1; then
+        log_warning "Impossible d'écrire le fichier de registre (disque plein ?) : mise à l'échelle ignorée."
+        print_disk_hint_if_low
+        return 0
+    fi
+
+    if import_reg_file "$reg_file" "$reg_win_path"; then
+        echo "$pourcent" > "$marker" 2>/dev/null || true
+        HIDPI_APPLIED="$pourcent"
+        log_success "Mise à l'échelle appliquée : caractères agrandis à ${pourcent} % (${dpi} DPI)."
+        log_info "Pour la modifier plus tard : WINEPREFIX=\"$WINEPREFIX\" winecfg,"
+        log_info "onglet « Affichage », curseur « Résolution de l'écran »."
+    else
+        log_warning "L'écriture du DPI dans le registre Wine a échoué : taille d'origine conservée."
+    fi
+
+    rm -f "$reg_file" 2>/dev/null || true
+
+    # Laisse le wineserver écrire le registre (quelques secondes, borné)
+    settle_wine_session 10
+    return 0
+}
+
+# Détecte un écran haute résolution et propose, le cas échéant, d'agrandir
+# les caractères de Pronote (simple question O/N, compréhensible par tous).
+configure_hidpi_scaling() {
+    local marker="$WINEPREFIX/.pronote-echelle"
+
+    # Choix déjà exprimé pour ce préfixe : on ne redemande pas.
+    if [ -f "$marker" ]; then
+        local precedent
+        precedent="$(cat "$marker" 2>/dev/null || true)"
+        if [ "$precedent" = "refuse" ]; then
+            log_info "Mise à l'échelle des caractères : choix précédent « non » conservé pour ce préfixe."
+        else
+            log_info "Mise à l'échelle des caractères déjà configurée pour ce préfixe (${precedent:-?} %)."
+        fi
+        return 0
+    fi
+
+    local res w h dpi facteur
+    res="$(detect_screen_resolution)" || res=""
+
+    if [ -z "$res" ]; then
+        log_info "Résolution de l'écran inconnue : la mise à l'échelle des caractères n'est pas proposée."
+        return 0
+    fi
+
+    w="${res%% *}"
+    h="${res#* }"; h="${h%% *}"
+    dpi="${res##* }"
+
+    facteur="$(hidpi_recommended_factor "$w" "$h" "$dpi")"
+
+    # Écran 1080p ou plus petit : aucune question, la taille par défaut
+    # (Arial 11, équivalent Windows) convient.
+    if [ "$facteur" = "1.0" ] || [ -z "$facteur" ]; then
+        return 0
+    fi
+
+    local pourcent dpi_cible reponse
+    pourcent="$(awk -v f="$facteur" 'BEGIN{printf "%.0f", f*100}')"
+    dpi_cible="$(awk -v f="$facteur" 'BEGIN{printf "%.0f", f*96}')"
+
+    echo ""
+    log_info "Écran haute résolution détecté : ${w}x${h} pixels."
+    echo "Sur ce type d'écran (QHD ou 4K), les caractères de Pronote peuvent paraître"
+    echo "très petits : Wine n'applique pas de mise à l'échelle par défaut."
+    echo "Il est possible d'agrandir automatiquement la taille des caractères"
+    echo "(équivalent d'un réglage Windows à ${pourcent} %)."
+    echo ""
+
+    reponse="$(ask_user "Agrandir les caractères de Pronote pour une meilleure lisibilité ? [O/n] : " "O")"
+
+    case "$reponse" in
+        n|N|non|Non|NON)
+            echo "refuse" > "$marker" 2>/dev/null || true
+            log_info "Taille d'origine conservée (modifiable plus tard via winecfg, onglet « Affichage »)."
+            ;;
+        *)
+            apply_hidpi_scaling "$dpi_cible" "$pourcent"
+            ;;
+    esac
+
     return 0
 }
 
@@ -4227,6 +5120,9 @@ if [ "\$OTHER_DESKTOP_COUNT" -eq 0 ]; then
 
     # Fichier de menu XDG (Éducation) créé par l'installateur v4.7
     rm -f "\$HOME/.config/menus/applications-merged/pronote-${PRONOTE_YEAR}.menu" 2>/dev/null || true
+
+    # Journal de l'ouvreur de pièces jointes (partagé entre les deux versions)
+    rm -rf "\$HOME/.local/share/pronote-pieces-jointes" 2>/dev/null || true
 else
     log_info "Une autre version de Pronote est encore installée : l'icône est conservée."
 fi
@@ -4398,8 +5294,17 @@ show_troubleshooting() {
     echo "    → Relancez ce script pour chacune des deux versions : celle qui était"
     echo "      écrasée sera réinstallée proprement dans son préfixe séparé."
     echo ""
+    echo "13. Une pièce jointe (PDF, Word, image...) ne s'ouvre pas :"
+    echo "    → Journal des ouvertures : ~/.local/share/pronote-pieces-jointes/ouverture.log"
+    echo "    → Images/PDF/vidéos s'ouvrent dans le navigateur ; documents bureautiques dans"
+    echo "      LibreOffice/OnlyOffice ; sans suite bureautique installée, rien n'est ouvert."
+    echo ""
+    echo "14. Caractères trop petits ou trop grands (écran QHD / 4K) :"
+    echo "    → WINEPREFIX=\"$WINEPREFIX\" winecfg"
+    echo "    → Onglet « Affichage » > curseur « Résolution de l'écran » (96 = taille d'origine)."
+    echo ""
     if [ "$IN_NIX_SHELL" = "1" ]; then
-        echo "13. NixOS : Wine provient de nix-shell. Pour le pérenniser (nix-collect-garbage),"
+        echo "15. NixOS : Wine provient de nix-shell. Pour le pérenniser (nix-collect-garbage),"
         echo "    ajoutez wineWow64Packages.stable (ou wineWowPackages.stable) et winetricks"
         echo "    à environment.systemPackages, puis nixos-rebuild switch."
         echo ""
@@ -4540,6 +5445,17 @@ main() {
     echo -e "${NC}"
 
     log_success "Version installée : Pronote $PRONOTE_VERSION - ${PRONOTE_ARCH} bits"
+    echo ""
+    echo "Pièces jointes (cahier de textes) :"
+    echo "  • Images, PDF, vidéos... : ouvertes dans le navigateur par défaut"
+    echo "  • Documents bureautiques (Word, Excel, PowerPoint, OpenDocument,"
+    echo "    RTF, texte...) : ouverts dans la suite bureautique installée"
+    echo "    (rien n'est ouvert si aucune suite n'est installée)"
+    if [ -n "$HIDPI_APPLIED" ]; then
+        echo ""
+        echo "Écran haute résolution : caractères de Pronote agrandis à $HIDPI_APPLIED %"
+        echo "  (modifiable : WINEPREFIX=\"$WINEPREFIX\" winecfg, onglet « Affichage »)"
+    fi
     echo ""
     echo "Pour lancer Pronote :"
     echo "  • Menu Applications > Éducation > Pronote Client $PRONOTE_YEAR (${PRONOTE_ARCH} bits)"
