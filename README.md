@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Installation Pronote Client 2026 - Script universel Linux v4.10
+# Installation Pronote Client 2026 - Script universel Linux v4.10.1
 # Support natif : Debian, Ubuntu, Mint, Fedora, Arch, CachyOS, Manjaro,
 #                 Omarchy, EndeavourOS, Garuda, openSUSE, NixOS, GLF OS,
 #                 Solus, Alpine Linux, Void Linux, Slackware (et Salix),
@@ -13,7 +13,7 @@
 #   64 bits : ~/.local/share/wineprefixes/pronote-2026
 #   32 bits : ~/.local/share/wineprefixes/pronote-2026-32
 #
-# Changelog v4.10 :
+# Changelog v4.10.1 :
 #   - Fix Ubuntu 26.04 / Mint (installation de Wine) :
 #     • Sélection automatique de la branche WineHQ : le dépôt WineHQ ne propose
 #       plus « winehq-stable » pour certaines bases (Ubuntu 26.04 « resolute » :
@@ -203,7 +203,7 @@ set -euo pipefail
 # Configuration générale
 # ------------------------------------------------------------------------------
 
-readonly SCRIPT_VERSION="4.10"
+readonly SCRIPT_VERSION="4.10.1"
 readonly DEFAULT_YEAR="2026"
 readonly DEFAULT_VERSION="2026.2.6"
 # Pronote 2026 refuse de se lancer avec Wine 9 ou une version inférieure :
@@ -215,7 +215,7 @@ readonly PRONOTE_ICON_URLS=(
     "https://img.icons8.com/doodle/1200/pronote-logo.jpg"
     "https://img.icons8.com/doodle/480/pronote-logo.png"
 )
-readonly HTTP_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) PronoteInstaller/4.10"
+readonly HTTP_USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) PronoteInstaller/4.10.1"
 readonly ICON_SIZES=(16 22 24 32 48 64 128 256)
 readonly ICON_BASE_DIR="$HOME/.local/share/icons/hicolor"
 readonly ICON_DIR="$ICON_BASE_DIR/scalable/apps"
@@ -2059,7 +2059,7 @@ apt_candidate_major() {
 # ==============================================================================
 # Installation de Wine : famille Debian / Ubuntu / Mint  (WineHQ)
 # ==============================================================================
-# Comportement v4.10 :
+# Comportement v4.10.1 :
 #   1. dépôt WineHQ configuré AVANT winetricks (clé .asc + .key, conservé) ;
 #   2. choix AUTOMATIQUE de la branche WineHQ proposant Wine 10/11 :
 #      winehq-stable puis winehq-devel puis winehq-staging (voir plus bas) ;
