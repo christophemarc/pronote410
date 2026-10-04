@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Installation Pronote Client 2026 - Script universel Linux v4.10.1
+# Installation Pronote Client 2026 - Script universel Linux v4.10
 # Support natif : Debian, Ubuntu, Mint, Fedora, Arch, CachyOS, Manjaro,
 #                 Omarchy, EndeavourOS, Garuda, openSUSE, NixOS, GLF OS,
 #                 Solus, Alpine Linux, Void Linux, Slackware (et Salix),
@@ -13,7 +13,7 @@
 #   64 bits : ~/.local/share/wineprefixes/pronote-2026
 #   32 bits : ~/.local/share/wineprefixes/pronote-2026-32
 #
-# Changelog v4.10.1 :
+# Changelog v4.10 :
 #   - Fix Ubuntu 26.04 / Mint (installation de Wine) :
 #     • Sélection automatique de la branche WineHQ : le dépôt WineHQ ne propose
 #       plus « winehq-stable » pour certaines bases (Ubuntu 26.04 « resolute » :
