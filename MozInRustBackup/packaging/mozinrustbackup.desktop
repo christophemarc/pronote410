@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=MozInRustBackup
+Name[en]=MozInRustBackup
+GenericName=Sauvegarde de profils Firefox/Thunderbird
+GenericName[en]=Firefox/Thunderbird profile backup
+Comment=Sauvegarder et restaurer les profils Firefox et Thunderbird
+Comment[en]=Back up and restore Firefox and Thunderbird profiles
+Exec=mozinrustbackup
+Icon=mozinrustbackup
+Terminal=false
+Categories=Utility;Archiving;FileTools;
+Keywords=firefox;thunderbird;profil;profile;sauvegarde;backup;mozilla;restauration;restore;
+StartupNotify=true

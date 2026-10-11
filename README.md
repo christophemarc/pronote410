@@ -5494,3 +5494,21 @@ main() {
 }
 
 main "$@"
+
+---
+
+## 🧩 MozInRustBackup — sauvegarde des profils Firefox / Thunderbird
+
+Ce dépôt contient également **MozInRustBackup**, un utilitaire Linux écrit en
+Rust (sans aucune dépendance) qui sauvegarde et restaure les profils Firefox et
+Thunderbird : détection des profils natifs / Flatpak / Snap, copie conforme
+compressée au format `.mozinrustbackup`, journal indiquant l'emplacement
+d'origine, restauration sécurisée avec confirmation avant écrasement.
+
+➡️ Documentation complète : [MozInRustBackup/README.md](MozInRustBackup/README.md)
+
+```bash
+cd MozInRustBackup && ./install.sh     # installation (menu + raccourci de bureau)
+mozinrustbackup                        # assistant pas à pas
+mozinrustbackup --liste                # profils trouvés sur le disque
+```
