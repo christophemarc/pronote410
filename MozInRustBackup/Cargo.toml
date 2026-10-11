@@ -1,0 +1,27 @@
+[package]
+name = "mozinrustbackup"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Sauvegarde et restauration des profils Firefox et Thunderbird sous Linux (compatible MozBackup)"
+authors = ["MozInRustBackup"]
+license = "MIT"
+
+[lib]
+name = "mozinrustbackup"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mozinrustbackup"
+path = "src/main.rs"
+
+# Aucune dépendance externe : le programme se compile hors ligne, avec ou sans
+# accès à crates.io, et produit un binaire autonome (musl ou glibc).
+[dependencies]
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"

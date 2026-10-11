@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="fond" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2b3a55"/>
+      <stop offset="100%" stop-color="#16202f"/>
+    </linearGradient>
+    <linearGradient id="flamme" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd166"/>
+      <stop offset="45%" stop-color="#ff7b25"/>
+      <stop offset="100%" stop-color="#e63946"/>
+    </linearGradient>
+    <linearGradient id="vert" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7ee787"/>
+      <stop offset="100%" stop-color="#2ea043"/>
+    </linearGradient>
+  </defs>
+
+  <!-- fond arrondi -->
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#fond)"/>
+
+  <!-- flamme « profil Mozilla » -->
+  <path d="M64 18c10 16 22 21 22 39 0 13-6 21-10 25 1-6 0-12-3-17-4 6-9 9-15 11-8 3-14 8-14 16 0 2 0 4 1 6-9-6-15-17-15-30 0-14 8-24 14-31 7-8 15-14 20-19z"
+        fill="url(#flamme)"/>
+  <path d="M63 54c5 8 11 11 11 20 0 8-5 14-11 14s-11-6-11-14c0-8 6-12 11-20z" fill="#fff2cc" opacity="0.85"/>
+
+  <!-- disquette / boîte d'archivage en bas à droite -->
+  <g transform="translate(66,62)">
+    <rect x="0" y="0" width="48" height="44" rx="6" fill="#0d1117" opacity="0.85"/>
+    <rect x="4" y="4" width="40" height="36" rx="4" fill="none" stroke="#8b949e" stroke-width="2"/>
+    <rect x="12" y="4" width="24" height="14" fill="#8b949e"/>
+    <circle cx="24" cy="30" r="7" fill="url(#vert)"/>
+    <path d="M21 30l2.5 2.5L28 27" fill="none" stroke="#0d1117" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- flèche de sauvegarde -->
+  <path d="M40 92h30" stroke="url(#vert)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M76 84l14 8-14 8z" fill="url(#vert)"/>
+</svg>
